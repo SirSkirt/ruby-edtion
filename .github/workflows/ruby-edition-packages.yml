@@ -41,6 +41,16 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl -p horizon-prepare --bin horizon-prepare
+      - name: Verify world and player persistence before publishing
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p horizon-client --lib save::tests::dedicated_world_save_preserves_player_file
+          if [[ "$GITHUB_REF_NAME" == nightly ]]; then
+            cargo test --locked -p horizon-client --lib save::tests::singleplayer_save_and_quit_restores_updated_player
+            cargo test --locked -p horizon-client --bin horizon-client game::execution_role::tests::integrated_server_persists_its_owner_but_dedicated_does_not
+          fi
       - name: Package compiled binaries and original Horizon preparation sources
         shell: bash
         env:
@@ -58,12 +68,15 @@ jobs:
           python - <<'PY'
           import json, os
           with open('research-lock.json') as f: lock = json.load(f)
+          channel = 'stable' if os.environ['GITHUB_REF_NAME'] == 'main' else 'nightly'
           with open('package/ruby-edition/ruby-edition-build.json', 'w') as f:
-              json.dump({'channel': os.environ['GITHUB_REF_NAME'], 'commit': os.environ['GITHUB_SHA'],
+              json.dump({'format_version': 1, 'channel': channel,
+                         'commit': os.environ['GITHUB_SHA'], 'platform': os.environ['LABEL'],
                          'minecraft_version': lock['minecraft']['version']}, f, indent=2)
           PY
           cd package
           python -m zipfile -c "../ruby-edition-$LABEL.zip" ruby-edition
+          python -m zipfile -t "../ruby-edition-$LABEL.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: ruby-edition-${{ matrix.label }}
@@ -83,7 +96,7 @@ jobs:
           pattern: ruby-edition-*
           path: dist
           merge-multiple: true
-      - name: Create checksums and immutable tagged release
+      - name: Create checksums and uniquely tagged release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -92,11 +105,16 @@ jobs:
           cd dist
           sha256sum ruby-edition-linux-x86_64.zip ruby-edition-windows-x64.zip > SHA256SUMS
           short="${GITHUB_SHA:0:8}"
-          tag="ruby-edition-${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-$short"
-          prerelease=()
-          if [[ "$GITHUB_REF_NAME" == nightly ]]; then prerelease+=(--prerelease --latest=false); fi
+          if [[ "$GITHUB_REF_NAME" == main ]]; then
+            channel=stable
+            flags=(--latest)
+          else
+            channel=nightly
+            flags=(--prerelease --latest=false)
+          fi
+          tag="ruby-edition-${channel}-${GITHUB_RUN_NUMBER}-$short"
           gh release create "$tag" ruby-edition-linux-x86_64.zip ruby-edition-windows-x64.zip SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Ruby Edition ${GITHUB_REF_NAME} · $short" \
-            --notes "Community Rust game build. Requires an owned Minecraft Java Edition 26.3 installation. Minecraft assets are not redistributed." \
-            "${prerelease[@]}"
+            --title "Ruby Edition ${channel^} · $short" \
+            --notes "Ruby Edition $channel build from $GITHUB_SHA. Requires a legally owned Minecraft Java Edition 26.3 installation. Mojang game files are never redistributed." \
+            "${flags[@]}"
