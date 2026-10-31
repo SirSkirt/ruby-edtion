@@ -6094,6 +6094,46 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// Save and Quit must persist the live owner's data, not just world metadata.
+    /// Rejoining the same save must load updated state, not its initial spawn.
+    #[test]
+    fn singleplayer_save_and_quit_restores_updated_player() {
+        let dir = std::env::temp_dir().join(format!(
+            "horizon-singleplayer-reopen-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+
+        let mut level = Level {
+            name: "Singleplayer".into(),
+            position: Some([0.5, 70.0, 0.5]),
+            inventory: vec![(0, "minecraft:dirt".into(), 1, 0)],
+            ..Level::default()
+        };
+        level.write(&dir).unwrap();
+        let owner_uuid = level.player_uuid;
+
+        // Simulate playing, then Save and Quit to Title.
+        level.position = Some([137.25, 85.0, -42.75]);
+        level.inventory = vec![(2, "minecraft:diamond".into(), 17, 0)];
+        level.xp_level = 12;
+        level.xp_total = 256;
+        level.day_time = 18000;
+        level.write(&dir).unwrap();
+
+        let restored = Level::read(&dir).unwrap();
+        assert_eq!(restored.player_uuid, owner_uuid);
+        assert_eq!(restored.position, Some([137.25, 85.0, -42.75]));
+        assert_eq!(
+            restored.inventory,
+            vec![(2, "minecraft:diamond".into(), 17, 0)]
+        );
+        assert_eq!((restored.xp_level, restored.xp_total), (12, 256));
+        assert_eq!(restored.day_time, 18000);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// Dedicated world saves must not overwrite separately managed player data.
     #[test]
     fn dedicated_world_save_preserves_player_file() {

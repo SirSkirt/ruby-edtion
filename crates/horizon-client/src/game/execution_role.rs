@@ -18,6 +18,14 @@ impl ExecutionRole {
     pub fn starts_integrated_server(self, server_thread: bool) -> bool {
         self.is_client() && server_thread
     }
+
+    /// The single-player owner belongs to the world save, including on the
+    /// integrated server thread. Only a real dedicated server manages player
+    /// files separately. Integrated servers set options.dedicated for their
+    /// headless startup, so that option must NOT control owner persistence.
+    pub fn writes_singleplayer_player(self) -> bool {
+        self != Self::DedicatedServer
+    }
 }
 
 #[cfg(test)]
@@ -35,5 +43,12 @@ mod tests {
             assert_eq!(role.starts_integrated_server(true), threaded);
             assert!(!role.starts_integrated_server(false));
         }
+    }
+
+    #[test]
+    fn integrated_server_persists_its_owner_but_dedicated_does_not() {
+        assert!(Client.writes_singleplayer_player());
+        assert!(IntegratedServer.writes_singleplayer_player());
+        assert!(!DedicatedServer.writes_singleplayer_player());
     }
 }
