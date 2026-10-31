@@ -1,7 +1,7 @@
 name: Ruby Edition game packages
 on:
   push:
-    branches: [main, nightly]
+    branches: [main, stable, nightly]
     paths-ignore: ['**/*.md', 'docs/**']
   workflow_dispatch:
 permissions:
@@ -68,7 +68,7 @@ jobs:
           python - <<'PY'
           import json, os
           with open('research-lock.json') as f: lock = json.load(f)
-          channel = 'stable' if os.environ['GITHUB_REF_NAME'] == 'main' else 'nightly'
+          channel = os.environ['GITHUB_REF_NAME']
           with open('package/ruby-edition/ruby-edition-build.json', 'w') as f:
               json.dump({'format_version': 1, 'channel': channel,
                          'commit': os.environ['GITHUB_SHA'], 'platform': os.environ['LABEL'],
@@ -87,7 +87,7 @@ jobs:
     name: Publish ${{ github.ref_name }} release
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref_name == 'main' || github.ref_name == 'nightly'
+    if: github.ref_name == 'stable' || github.ref_name == 'nightly'
     permissions:
       contents: write
     steps:
@@ -105,7 +105,7 @@ jobs:
           cd dist
           sha256sum ruby-edition-linux-x86_64.zip ruby-edition-windows-x64.zip > SHA256SUMS
           short="${GITHUB_SHA:0:8}"
-          if [[ "$GITHUB_REF_NAME" == main ]]; then
+          if [[ "$GITHUB_REF_NAME" == stable ]]; then
             channel=stable
             flags=(--latest)
           else
