@@ -1,0 +1,120 @@
+name: Ruby Edition game packages
+on:
+  push:
+    branches: [main, nightly]
+    paths-ignore: ['**/*.md', 'docs/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ruby-edition-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux-x86_64
+            ext: ''
+          - os: windows-latest
+            label: windows-x64
+            ext: .exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ruby-edition-${{ matrix.label }}
+      - name: Linux audio and controller headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
+      - name: Build game, preparation helper, and command tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl -p horizon-prepare --bin horizon-prepare
+      - name: Verify world and player persistence before publishing
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p horizon-client --lib save::tests::dedicated_world_save_preserves_player_file
+          if [[ "$GITHUB_REF_NAME" == nightly ]]; then
+            cargo test --locked -p horizon-client --lib save::tests::singleplayer_save_and_quit_restores_updated_player
+            cargo test --locked -p horizon-client --bin horizon-client game::execution_role::tests::integrated_server_persists_its_owner_but_dedicated_does_not
+          fi
+      - name: Package compiled binaries and original Horizon preparation sources
+        shell: bash
+        env:
+          LABEL: ${{ matrix.label }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          mkdir -p package/ruby-edition/crates/horizon-prepare package/ruby-edition/mods/horizon/src/test
+          for name in horizon-client horizon-ctl horizon-prepare; do
+            cp "target/fast/$name$EXT" "package/ruby-edition/$name$EXT"
+          done
+          cp research-lock.json package/ruby-edition/
+          cp -R crates/horizon-prepare/src package/ruby-edition/crates/horizon-prepare/
+          cp -R mods/horizon/src/test/java package/ruby-edition/mods/horizon/src/test/
+          python - <<'PY'
+          import json, os
+          with open('research-lock.json') as f: lock = json.load(f)
+          channel = 'stable' if os.environ['GITHUB_REF_NAME'] == 'main' else 'nightly'
+          with open('package/ruby-edition/ruby-edition-build.json', 'w') as f:
+              json.dump({'format_version': 1, 'channel': channel,
+                         'commit': os.environ['GITHUB_SHA'], 'platform': os.environ['LABEL'],
+                         'minecraft_version': lock['minecraft']['version']}, f, indent=2)
+          PY
+          cd package
+          python -m zipfile -c "../ruby-edition-$LABEL.zip" ruby-edition
+          python -m zipfile -t "../ruby-edition-$LABEL.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ruby-edition-${{ matrix.label }}
+          path: ruby-edition-${{ matrix.label }}.zip
+          if-no-files-found: error
+          retention-days: 14
+  publish:
+    name: Publish ${{ github.ref_name }} release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'main' || github.ref_name == 'nightly'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ruby-edition-*
+          path: dist
+          merge-multiple: true
+      - name: Create checksums and uniquely tagged release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ruby-edition-linux-x86_64.zip ruby-edition-windows-x64.zip > SHA256SUMS
+          short="${GITHUB_SHA:0:8}"
+          if [[ "$GITHUB_REF_NAME" == main ]]; then
+            channel=stable
+            flags=(--latest)
+          else
+            channel=nightly
+            flags=(--prerelease --latest=false)
+          fi
+          tag="ruby-edition-${channel}-${GITHUB_RUN_NUMBER}-$short"
+          gh release create "$tag" ruby-edition-linux-x86_64.zip ruby-edition-windows-x64.zip SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Ruby Edition ${channel^} · $short" \
+            --notes "Ruby Edition $channel build from $GITHUB_SHA. Requires a legally owned Minecraft Java Edition 26.3 installation. Mojang game files are never redistributed." \
+            "${flags[@]}"
