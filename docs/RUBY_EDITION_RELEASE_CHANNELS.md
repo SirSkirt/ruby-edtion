@@ -2,11 +2,19 @@
 
 This repository publishes **compiled game binaries**, not Mojang's game assets. The Windows and Linux builds run on GitHub Actions using [Ruby Edition game packages](../.github/workflows/ruby-edition-packages.yml).
 
+## Branch responsibility
+
+- `main` — **Horizon integration**. Merge upstream Horizon's `main` here, preserving its commit ancestry and retaining the Ruby Edition packaging and integration documentation. This branch is **not** a public Ruby game release channel.
+- `nightly` — **Ruby game development**. Keeps the game branding, bug fixes, and experimental changes; selectively picks reviewed upstream changes from `main`.
+- `stable` — **Ruby Stable**. Receives only approved, tested game changes, separate from integration and ongoing development.
+
+Horizon includes its own launcher source, but the Ruby Edition packaging workflow builds only the **game** and resource-preparation tools. **Ruby Launcher** is developed and distributed from its own `SirSkirt/Ruby-Launcher` repository; do not publish Horizon's launcher as Ruby Launcher.
+
 ## Channel contract
 
 | Launcher selection | Source branch | Release tag prefix | GitHub release status |
 | --- | --- | --- | --- |
-| Stable | `main` | `ruby-edition-stable-` | Normal release (marked Latest) |
+| Stable | `stable` | `ruby-edition-stable-` | Normal release (marked Latest) |
 | Nightly | `nightly` | `ruby-edition-nightly-` | Prerelease |
 
 Tags are **unique per build** and must not be force-moved. Examples: `ruby-edition-stable-2-12345678` and `ruby-edition-nightly-3-87654321`.
@@ -44,10 +52,10 @@ A release does not mean the game is playable out of the box before local resourc
 ## Publishing
 
 - Push to `nightly` -> automatically builds and publishes a prerelease after compilation and the save-persistence checks pass.
-- Push to `main` -> automatically builds and publishes a Stable release after checks pass.
+- Push to `stable` -> automatically builds and publishes a Stable release after checks pass.
 - The workflow can also be run manually with **Actions**. A manual workflow must be started on the desired source branch.
 - Release artifacts are public; no GitHub token should be embedded in Ruby Launcher for reading public releases.
-- Nightly bug fixes can be promoted into Stable after real game save/rejoin testing. Do not merge the current save fix automatically.
+- `main` integrates upstream Horizon changes and runs verification, but never publishes Ruby Edition game releases. Reviewed changes can be ported to `nightly`, then promoted to `stable` after testing. Keep Ruby branding and distribution rules intact.
 
 ## Testing Save and Quit
 
