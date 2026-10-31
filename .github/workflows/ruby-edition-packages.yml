@@ -46,6 +46,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cargo test --locked -p horizon-client-render --lib title_edition
           cargo test --locked -p horizon-client --lib save::tests::dedicated_world_save_preserves_player_file
           if [[ "$GITHUB_REF_NAME" == nightly ]]; then
             cargo test --locked -p horizon-client --lib save::tests::singleplayer_save_and_quit_restores_updated_player
