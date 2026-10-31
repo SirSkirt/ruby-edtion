@@ -13163,10 +13163,13 @@ impl Game<'_> {
         self.save_warden_tracker();
         self.sync_level();
         self.store_owner();
-        if self.options.dedicated.is_some() {
-            self.level.write_without_player(&self.world_root)?;
-        } else {
+        // Integrated servers use options.dedicated for headless startup too.
+        // Only an actual dedicated server must skip the single-player owner's
+        // player file; otherwise Save and Quit loses position and inventory.
+        if self.options.execution_role.writes_singleplayer_player() {
             self.level.write(&self.world_root)?;
+        } else {
+            self.level.write_without_player(&self.world_root)?;
         }
         self.save_world_state();
         self.message = Some(("Saved the game".into(), Instant::now()));
