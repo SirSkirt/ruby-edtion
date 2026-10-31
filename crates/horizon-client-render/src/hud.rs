@@ -552,12 +552,12 @@ impl HudAtlas {
             images.extend(more);
             animated.extend(more_animated);
         }
-        // The title screen's "JAVA EDITION" banner reads "RUST EDITION".
+        // Ruby Edition rebuilds the vanilla subtitle at runtime without bundling Mojang art.
         if let Some(edition) = images
             .iter_mut()
             .find(|i| i.0 == crate::title_edition::SPRITE)
             && let Some(pixels) =
-                crate::title_edition::rust_edition(edition.1, edition.2, &edition.3)
+                crate::title_edition::ruby_edition(edition.1, edition.2, &edition.3)
         {
             edition.3 = pixels;
         }
